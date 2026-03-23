@@ -25,18 +25,18 @@
 }
 
 .dark {
-  /* Dark theme */
-  --color-bg: #191918;
-  --color-bg-alt: #1F1F1E;
-  --color-surface: #242423;
-  --color-sidebar: rgba(30, 30, 30, 0.8);
+  /* Dark theme - cool dark blue */
+  --color-bg: #0a0a2e;
+  --color-bg-alt: #0d0d35;
+  --color-surface: #12123a;
+  --color-sidebar: rgba(10, 10, 46, 0.8);
   --color-border: rgba(255, 255, 255, 0.1);
-  --color-text-main: #ECEBE8;
-  --color-text-muted: #9E9D99;
-  
+  --color-text-main: #e8e8f0;
+  --color-text-muted: #8888aa;
+
   /* Dark shadows - subtle macOS style */
   --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
-  --shadow-warm: 0 2px 12px -2px rgba(217, 119, 87, 0.15);
+  --shadow-warm: 0 2px 12px -2px rgba(100, 100, 200, 0.15);
   --shadow-elevated: 0 12px 28px -4px rgba(0, 0, 0, 0.3);
 }
 
@@ -55,17 +55,17 @@
   
   /* Static colors (for explicit light/dark usage) */
   --color-bg-light: #FBF9F6;
-  --color-bg-dark: #191918;
+  --color-bg-dark: #0a0a2e;
   --color-surface-light: #FFFFFF;
-  --color-surface-dark: #242423;
+  --color-surface-dark: #12123a;
   --color-sidebar-light: #F0EFEC;
-  --color-sidebar-dark: #1F1F1E;
+  --color-sidebar-dark: #0d0d35;
   --color-border-light: #E6E4DD;
-  --color-border-dark: #333331;
+  --color-border-dark: #1e1e4a;
   --color-text-main-light: #383733;
-  --color-text-main-dark: #ECEBE8;
+  --color-text-main-dark: #e8e8f0;
   --color-text-muted-light: #75736E;
-  --color-text-muted-dark: #9E9D99;
+  --color-text-muted-dark: #8888aa;
   
   /* Shadows */
   --shadow-soft: var(--shadow-soft);
