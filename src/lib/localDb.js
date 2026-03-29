@@ -40,6 +40,18 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// Seed db.json with default schema if it doesn't exist yet.
+// proper-lockfile requires the target file to exist before it can acquire a lock,
+// so we must create the file before the first safeRead/safeWrite call.
+if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(cloneDefaultData(), null, 2), { flag: "wx" });
+  } catch (err) {
+    // "wx" flag throws EEXIST if another process raced us — that's fine, file exists now.
+    if (err.code !== "EEXIST") throw err;
+  }
+}
+
 // Default data structure
 const defaultData = {
   providerConnections: [],
