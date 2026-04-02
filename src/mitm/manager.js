@@ -452,7 +452,7 @@ async function startServer(apiKey, sudoPassword) {
   } else if (isSudoAvailable()) {
     const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
-      "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
+      "sudo", ["-S", "-E", "/bin/sh", "-c", inlineCmd],
       { detached: false, stdio: ["pipe", "pipe", "pipe"] }
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
