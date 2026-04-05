@@ -84,13 +84,17 @@ export default function ModelSelectModal({
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       if (providerInfo.passthroughModels) {
+        // Use providerId to match stored aliases; render/select with display alias
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
-          .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${alias}/`, ""),
-            name: aliasName,
-            value: fullModel,
-          }));
+          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
+          .map(([aliasName, fullModel]) => {
+            const modelId = fullModel.replace(`${providerId}/`, "");
+            return {
+              id: modelId,
+              name: aliasName,
+              value: `${alias}/${modelId}`,
+            };
+          });
 
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
