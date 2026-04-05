@@ -1,5 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias } from "@/shared/constants/providers";
+import { getProviderAlias, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
 
 /**
@@ -85,6 +85,41 @@ export async function GET() {
       for (const [providerId, conn] of activeConnectionByProvider.entries()) {
         const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
         const outputAlias = getProviderAlias(providerId) || staticAlias;
+
+        // OpenAI-compatible custom providers: fetch models dynamically from their /models endpoint
+        if (isOpenAICompatibleProvider(providerId)) {
+          const baseUrl = conn?.providerSpecificData?.baseUrl;
+          if (baseUrl) {
+            try {
+              const url = `${baseUrl.replace(/\/$/, "")}/models`;
+              const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${conn.apiKey}` }
+              });
+              if (res.ok) {
+                const data = await res.json();
+                const rawModels = data.data || data.models || [];
+                for (const m of rawModels) {
+                  const modelId = typeof m === "string" ? m : (m.id || m.name || m.model);
+                  if (modelId) {
+                    models.push({
+                      id: `${outputAlias}/${modelId}`,
+                      object: "model",
+                      created: timestamp,
+                      owned_by: outputAlias,
+                      permission: [],
+                      root: modelId,
+                      parent: null,
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.log(`Failed to fetch models from ${providerId}:`, e.message);
+            }
+          }
+          continue;
+        }
+
         const providerModels = PROVIDER_MODELS[staticAlias] || [];
         const enabledModels = conn?.providerSpecificData?.enabledModels;
         const hasExplicitEnabledModels =
