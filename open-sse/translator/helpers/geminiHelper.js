@@ -17,6 +17,8 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "dependencies", "dependentSchemas", "dependentRequired",
   // Other unsupported keywords
   "title", "if", "then", "else", "contentMediaType", "contentEncoding",
+  // Anthropic/OpenAI extension fields not supported by Gemini
+  "enumDescriptions",
   // UI/Styling properties (from Cursor tools - NOT JSON Schema standard)
   "cornerRadius", "fillColor", "fontFamily", "fontSize", "fontWeight",
   "gap", "padding", "strokeColor", "strokeThickness", "textColor"
