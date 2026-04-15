@@ -169,6 +169,20 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "nvidia": {
+          // ollama-cloud: always uses the fixed public endpoint
+          // ollama-local: reads custom URL from stored providerSpecificData, falls back to localhost
+          let ollamaEndpoint = provider === "ollama-local" ? "http://localhost:11434/api/tags" : "https://ollama.com/api/tags";
+          if (provider === "ollama-local") {
+            try {
+              const { getAllProviderConnections } = await import("@/models");
+              const allConnections = (await getAllProviderConnections?.()) ?? [];
+              const matched = allConnections.find((c) => c.provider === "ollama-local" && c.apiKey === apiKey);
+              if (matched?.providerSpecificData?.ollamaLocalUrl) {
+                const base = matched.providerSpecificData.ollamaLocalUrl.replace(/\/$/, "");
+                ollamaEndpoint = `${base}/api/tags`;
+              }
+            } catch { /* DB not available; use default */ }
+          }
           const endpoints = {
             deepseek: "https://api.deepseek.com/models",
             groq: "https://api.groq.com/openai/v1/models",
@@ -182,8 +196,8 @@ export async function POST(request) {
             nebius: "https://api.studio.nebius.ai/v1/models",
             siliconflow: "https://api.siliconflow.cn/v1/models",
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
-            ollama: "https://ollama.com/api/tags",
-            "ollama-local": "http://localhost:11434/api/tags",
+            ollama: ollamaEndpoint,
+            "ollama-local": ollamaEndpoint,
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",

@@ -380,6 +380,30 @@ export async function GET(request, { params }) {
       });
     }
 
+    // ollama-local: allow per-connection custom Ollama URL via providerSpecificData.ollamaLocalUrl
+    if (connection.provider === "ollama-local" && connection.providerSpecificData?.ollamaLocalUrl) {
+      const base = connection.providerSpecificData.ollamaLocalUrl.replace(/\/$/, "");
+      const url = `${base}/api/tags`;
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            ...(connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {})
+          }
+        });
+        if (!response.ok) {
+          console.log(`Error fetching ollama-local models from ${url}:`, response.status);
+          return NextResponse.json({ provider: connection.provider, connectionId: connection.id, models: [] });
+        }
+        const data = await response.json();
+        const models = (data.models || []).map(m => ({ id: m.name || m.model, name: m.name || m.model }));
+        return NextResponse.json({ provider: connection.provider, connectionId: connection.id, models });
+      } catch (error) {
+        console.log(`Failed to fetch ollama-local models from ${url}:`, error.message);
+        return NextResponse.json({ provider: connection.provider, connectionId: connection.id, models: [] });
+      }
+    }
+
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
       return NextResponse.json(
