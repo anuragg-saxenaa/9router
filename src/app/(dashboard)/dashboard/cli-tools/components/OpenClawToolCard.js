@@ -263,7 +263,7 @@ export default function OpenClawToolCard({
             </div>
           )}
 
-          {!checkingOpenclaw && openclawStatus?.installed && (
+          {(!checkingOpenclaw && openclawStatus && openclawStatus.installed) && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}
@@ -356,6 +356,16 @@ export default function OpenClawToolCard({
                 </Button>
               </div>
             </>
+          )}
+
+          {/* Show manual config option even when detection fails */}
+          {!checkingOpenclaw && openclawStatus && !openclawStatus.installed && (
+            <div className="flex items-center gap-2 mt-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
+                <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
+              </Button>
+              <span className="text-xs text-text-muted">— configure even if detection failed</span>
+            </div>
           )}
         </div>
       )}
