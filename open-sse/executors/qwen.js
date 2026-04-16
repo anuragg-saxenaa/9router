@@ -71,7 +71,10 @@ export class QwenExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const next = body && typeof body === "object" ? { ...body } : body;
-    if (stream && next?.messages && !next.stream_options) {
+    if (!stream) {
+      // Qwen rejects stream_options in non-streaming requests
+      if (next) delete next.stream_options;
+    } else if (next?.messages && !next.stream_options) {
       next.stream_options = { include_usage: true };
     }
     return ensureQwenSystemMessage(next);
