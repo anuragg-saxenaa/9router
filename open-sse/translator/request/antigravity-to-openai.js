@@ -98,10 +98,18 @@ function normalizeSchemaTypes(schema) {
     result.type = result.type.toLowerCase();
   }
 
+  // Strip enumDescriptions - upstream API doesn't support it
   if (result.properties) {
     const normalized = {};
     for (const [key, val] of Object.entries(result.properties)) {
-      normalized[key] = normalizeSchemaTypes(val);
+      // Remove enumDescriptions from property
+      if (val && typeof val === "object") {
+        const cleaned = { ...val };
+        delete cleaned.enumDescriptions;
+        normalized[key] = normalizeSchemaTypes(cleaned);
+      } else {
+        normalized[key] = normalizeSchemaTypes(val);
+      }
     }
     result.properties = normalized;
   }
