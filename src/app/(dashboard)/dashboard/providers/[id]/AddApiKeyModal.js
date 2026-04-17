@@ -7,11 +7,15 @@ import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
 
+  // Check if provider supports custom baseUrl (ollama-local or noAuth providers)
+  const supportsCustomBaseUrl = provider === "ollama-local" || provider === "ollama";
+
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
+    baseUrl: "",
   });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -63,7 +67,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: undefined
+        providerSpecificData: supportsCustomBaseUrl && formData.baseUrl.trim()
+          ? { baseUrl: formData.baseUrl.trim() }
+          : undefined
       });
     } finally {
       setSaving(false);
@@ -130,6 +136,20 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <p className="text-xs text-text-muted">
             No active proxy pools available. Create one in Proxy Pools page first.
           </p>
+        )}
+
+        {supportsCustomBaseUrl && (
+          <>
+            <Input
+              label="Ollama Host URL (optional)"
+              value={formData.baseUrl}
+              onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+              placeholder={provider === "ollama-local" ? "http://192.168.1.100:11434" : "https://ollama.com/api/chat"}
+            />
+            <p className="text-xs text-text-muted">
+              Leave empty to use default. For ollama-local, enter your remote Ollama server address.
+            </p>
+          </>
         )}
 
         <p className="text-xs text-text-muted">

@@ -197,7 +197,7 @@ export async function checkAndRefreshToken(provider, credentials) {
     const now       = Date.now();
     const remaining = expiresAt - now;
 
-    const refreshLead = _getRefreshLeadMs(provider);
+    const refreshLead = credentials.providerSpecificData?.refreshLeadMs ?? _getRefreshLeadMs(provider);
     if (remaining < refreshLead) {
       log.info("TOKEN_REFRESH", "Token expiring soon, refreshing proactively", {
         provider,
