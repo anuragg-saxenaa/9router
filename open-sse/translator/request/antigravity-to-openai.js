@@ -70,6 +70,18 @@ export function antigravityToOpenAIRequest(model, body, stream) {
   if (req.tools && Array.isArray(req.tools)) {
     result.tools = [];
     for (const tool of req.tools) {
+      // Handle Claude format: {name, description, input_schema}
+      if (tool.name && (tool.input_schema || tool.description)) {
+        result.tools.push({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: String(tool.description || ""),
+            parameters: tool.input_schema || { type: "object", properties: {} }
+          }
+        });
+      }
+      // Handle Gemini/Antigravity format: {functionDeclarations: [{name, description, parameters}]}
       if (tool.functionDeclarations) {
         for (const func of tool.functionDeclarations) {
           result.tools.push({
@@ -81,6 +93,10 @@ export function antigravityToOpenAIRequest(model, body, stream) {
             }
           });
         }
+      }
+      // Handle already normalized OpenAI format: {type: "function", function: {name, description, parameters}}
+      if (tool.type === "function" && tool.function) {
+        result.tools.push(tool);
       }
     }
   }
