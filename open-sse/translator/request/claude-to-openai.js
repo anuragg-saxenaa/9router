@@ -186,8 +186,10 @@ function convertClaudeMessage(msg) {
     }
 
     // If has tool calls, return assistant message with tool_calls
+    // Always include content field (even empty string) so downstream providers
+    // like DeepSeek that require content don't get undefined (which causes 400).
     if (toolCalls.length > 0) {
-      const result = { role: "assistant" };
+      const result = { role: "assistant", content: "" };
       if (parts.length > 0) {
         result.content = parts.length === 1 && parts[0].type === "text" 
           ? parts[0].text 
