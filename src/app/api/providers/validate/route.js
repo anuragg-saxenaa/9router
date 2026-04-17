@@ -62,6 +62,12 @@ export async function POST(request) {
         });
       }
 
+      // ollama-local has no API key; treat as always valid — user configures the URL after adding the connection
+      if (provider === "ollama-local") {
+        return NextResponse.json({ valid: true, error: null });
+      }
+
+
       switch (provider) {
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {

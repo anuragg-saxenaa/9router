@@ -380,6 +380,37 @@ export async function GET(request, { params }) {
       });
     }
 
+    // ollama-local: use per-connection baseUrl from providerSpecificData if set, else fallback to localhost
+    if (connection.provider === "ollama-local") {
+      const baseUrl = connection.providerSpecificData?.baseUrl || "http://localhost:11434";
+      const url = `${baseUrl.replace(/\/$/, "")}/api/tags`;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          return NextResponse.json(
+            { error: `Ollama not reachable at ${url}: ${response.status}` },
+            { status: response.status }
+          );
+        }
+        const data = await response.json();
+        const models = (data.models || []).map((m) => ({
+          id: m.name,
+          name: m.name,
+          description: m.description || "",
+        }));
+        return NextResponse.json({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models,
+        });
+      } catch (err) {
+        return NextResponse.json(
+          { error: `Could not connect to Ollama at ${url}: ${err.message}` },
+          { status: 500 }
+        );
+      }
+    }
+
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
       return NextResponse.json(
