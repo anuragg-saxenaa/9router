@@ -90,6 +90,10 @@ export class QwenExecutor extends DefaultExecutor {
     if (stream && next?.messages && !next.stream_options) {
       next.stream_options = { include_usage: true };
     }
+    // Strip stream_options for non-streaming requests — Qwen rejects it
+    if (stream === false && next?.stream_options) {
+      delete next.stream_options;
+    }
     next = sanitizeQwenThinkingToolChoice(next);
     return ensureQwenSystemMessage(next);
   }
