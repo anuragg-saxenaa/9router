@@ -35,6 +35,11 @@ export class BaseExecutor {
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
+    // Allow ollama-local to use custom baseUrl from providerSpecificData for remote hosts
+    if (this.provider === "ollama-local" && credentials?.providerSpecificData?.baseUrl) {
+      const baseUrl = credentials.providerSpecificData.baseUrl.replace(/\/$/, "");
+      return `${baseUrl}/api/chat`;
+    }
     const baseUrls = this.getBaseUrls();
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
