@@ -5,7 +5,22 @@ export default function GetStarted() {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = (text) => {
-    navigator.clipboard.writeText(text);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for SSR/non-HTTPS environments
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch {
+      // Silently fail if all clipboard methods are unavailable
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

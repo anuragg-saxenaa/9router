@@ -238,6 +238,8 @@ export const PROVIDER_MODELS = {
     { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
     { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
     { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
+    // Chat completion — Z.ai / GLM-5.1 (replaces z-ai/glm-5 which deprecates Apr 20)
+    { id: "z-ai/glm-5.1", name: "GLM 5.1" },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },

@@ -189,7 +189,21 @@ export default function TranslatorPage() {
 
   const handleCopy = async (id) => {
     if (!contents[id]) return;
-    await navigator.clipboard.writeText(contents[id]);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(contents[id]);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = contents[id];
+        textarea.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch {
+      // Silently fail if clipboard is unavailable
+    }
   };
 
   const handleFormat = (id) => {
