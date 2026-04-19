@@ -142,9 +142,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Execute request
+  // Strip SDK metadata headers (X-Stainless-*, User-Agent) before forwarding to non-Anthropic providers.
+  // These headers are added by the OpenAI SDK and upstream providers (Cloudflare) may block them.
+  const isAnthropicProvider = provider === "claude" || provider.startsWith("anthropic-compatible");
+  const clientHeaders = (() => {
+    if (isAnthropicProvider || !clientRawRequest?.headers) return null;
+    const stripped = {};
+    for (const [key, value] of Object.entries(clientRawRequest.headers)) {
+      const lower = key.toLowerCase();
+      if (!lower.startsWith("x-stainless") && lower !== "user-agent") {
+        stripped[key] = value;
+      }
+    }
+    return stripped;
+  })();
+
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions, clientHeaders });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;

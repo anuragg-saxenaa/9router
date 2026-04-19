@@ -95,12 +95,12 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, clientHeaders = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
-    
+
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
@@ -108,6 +108,19 @@ export class BaseExecutor {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream);
+
+      // Strip SDK metadata headers (X-Stainless-*, User-Agent) before forwarding to non-Anthropic
+      // providers. These are added by the OpenAI SDK and upstream providers (Cloudflare) may block
+      // them. Merge remaining safe client headers on top (e.g. Authorization, custom metadata).
+      const isAnthropicProvider = this.provider === "claude" || this.provider?.startsWith?.("anthropic-compatible");
+      if (!isAnthropicProvider && clientHeaders) {
+        for (const [key, value] of Object.entries(clientHeaders)) {
+          const lower = key.toLowerCase();
+          if (!lower.startsWith("x-stainless") && lower !== "user-agent") {
+            headers[key] = value;
+          }
+        }
+      }
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
