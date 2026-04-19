@@ -100,14 +100,18 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-0.5">
+            <button
+              onClick={() => navigator.clipboard.writeText("npm install -g 9router@latest")}
+              title="Click to copy install command"
+              className="flex flex-col gap-0.5 hover:opacity-80 transition-opacity text-left cursor-pointer rounded p-1 -m-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
                 npm install -g 9router@latest
               </code>
-            </div>
+            </button>
           )}
         </div>
 
