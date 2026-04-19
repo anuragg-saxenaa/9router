@@ -32,7 +32,29 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const handleCopy = async (text, field) => {
-    await navigator.clipboard.writeText(replaceVars(text));
+    const resolved = replaceVars(text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(resolved).catch(() => {
+        // Fallback for SSR/non-HTTPS
+        const textarea = document.createElement("textarea");
+        textarea.value = resolved;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      });
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = resolved;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
