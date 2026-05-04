@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -138,31 +138,56 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const res = await fetch(`/api/oauth/${provider}/device-code`);
+        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        if (provider === "kiro" && idcConfig?.startUrl) {
+          deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
+          if (idcConfig.region) {
+            deviceCodeUrl.searchParams.set("region", idcConfig.region);
+          }
+          deviceCodeUrl.searchParams.set("auth_method", "idc");
+        }
+        const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
         setDeviceData(data);
 
-        // Open verification URL
+        // Auto-open verification URL in new tab
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, "_blank");
+        if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
 
         // Pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        const extraData = provider === "kiro"
+          ? {
+              _clientId: data._clientId,
+              _clientSecret: data._clientSecret,
+              _region: data._region,
+              _authMethod: data._authMethod,
+              _startUrl: data._startUrl,
+            }
+          : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
+      const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
       let redirectUri;
+      let codexProxyActive = false;
+
       if (provider === "codex") {
-        // Codex requires fixed port 1455
+        // Try to start proxy on fixed port 1455 → redirect callback to app port
+        try {
+          const proxyRes = await fetch(`/api/oauth/codex/start-proxy?app_port=${appPort}`);
+          const proxyData = await proxyRes.json();
+          codexProxyActive = proxyData.success;
+        } catch {
+          codexProxyActive = false;
+        }
+        // Always use fixed port 1455 as redirect_uri (Codex requirement)
         redirectUri = "http://localhost:1455/auth/callback";
       } else {
-        // Use app's current port for OAuth callback
-        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-        redirectUri = `http://localhost:${port}/callback`;
+        redirectUri = `http://localhost:${appPort}/callback`;
       }
 
       // Build authorize URL, optionally passing provider-specific metadata (e.g. gitlab clientId)
@@ -177,16 +202,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       setAuthData({ ...data, redirectUri });
 
-      // For Codex or non-localhost: use manual input mode
-      if (provider === "codex" || !isLocalhost) {
+      if (provider === "codex" && codexProxyActive) {
+        // Proxy active: callback will redirect to app port automatically
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (!isLocalhost || provider === "codex") {
+        // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
         // Localhost (non-Codex): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
-
-        // Check if popup was blocked
         if (!popupRef.current) {
           setStep("input");
         }
@@ -195,7 +225,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -209,8 +239,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       pollingAbortRef.current = false;
       startOAuthFlow();
     } else if (!isOpen) {
-      // Abort polling when modal closes
+      // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
+      if (provider === "codex") {
+        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
@@ -319,84 +352,45 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
-  // Clear session on modal close
+  // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
+    if (provider === "codex") {
+      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, provider]);
 
   if (!provider || !providerInfo) return null;
+  const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
 
   return (
     <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Waiting Step (Localhost - popup mode) */}
-        {step === "waiting" && !isDeviceCode && (
-          <div className="text-center py-6">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+        {/* Waiting + Manual Input combined (non-device-code) */}
+        {(step === "waiting" || step === "input") && !isDeviceCode && (
+          <>
+            {/* Option A: Auto via popup */}
+            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+              <span className="material-symbols-outlined text-base text-primary animate-spin">
                 progress_activity
               </span>
+              <span className="text-sm">Waiting for popup authorization…</span>
             </div>
-            <h3 className="text-lg font-semibold mb-2">Waiting for Authorization</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Complete the authorization in the popup window.
-            </p>
-            <Button variant="ghost" onClick={() => setStep("input")}>
-              Popup blocked? Enter URL manually
-            </Button>
-          </div>
-        )}
 
-        {/* Device Code Flow - Waiting */}
-        {step === "waiting" && isDeviceCode && deviceData && (
-          <>
-            <div className="text-center py-4">
-              <p className="text-sm text-text-muted mb-4">
-                Visit the URL below and enter the code:
-              </p>
-              <div className="bg-sidebar p-4 rounded-lg mb-4">
-                <p className="text-xs text-text-muted mb-1">Verification URL</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-sm break-all">{deviceData.verification_uri}</code>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copied === "verify_url" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.verification_uri, "verify_url")}
-                  />
-                </div>
-              </div>
-              <div className="bg-primary/10 p-4 rounded-lg">
-                <p className="text-xs text-text-muted mb-1">Your Code</p>
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copied === "user_code" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.user_code, "user_code")}
-                  />
-                </div>
-              </div>
+            {/* Divider */}
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
+              <div className="flex-1 h-px bg-border" />
             </div>
-            {polling && (
-              <div className="flex items-center justify-center gap-2 text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin">progress_activity</span>
-                Waiting for authorization...
-              </div>
-            )}
-          </>
-        )}
 
-        {/* Manual Input Step */}
-        {step === "input" && !isDeviceCode && (
-          <>
+            {/* Option B: Manual paste */}
             <div className="space-y-4">
               <div>
                 <p className="text-sm font-medium mb-2">Step 1: Open this URL in your browser</p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
-                  <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")}>
+                  <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")} disabled={!authData?.authUrl}>
                     Copy
                   </Button>
                 </div>
@@ -424,6 +418,57 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 Cancel
               </Button>
             </div>
+          </>
+        )}
+
+        {/* Device Code Flow - Waiting */}
+        {step === "waiting" && isDeviceCode && deviceData && (
+          <>
+            <div className="text-center py-4">
+              <p className="text-sm text-text-muted mb-4">
+                Visit the login URL below and authorize:
+              </p>
+              <div className="bg-sidebar p-4 rounded-lg mb-4">
+                <p className="text-xs text-text-muted mb-1">Login URL</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-sm break-all">{deviceLoginUrl}</code>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={copied === "login_url" ? "check" : "content_copy"}
+                    onClick={() => copy(deviceLoginUrl, "login_url")}
+                    disabled={!deviceLoginUrl}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="open_in_new"
+                    onClick={() => window.open(deviceLoginUrl, "_blank", "noopener,noreferrer")}
+                    disabled={!deviceLoginUrl}
+                  >
+                    Open
+                  </Button>
+                </div>
+              </div>
+              <div className="bg-primary/10 p-4 rounded-lg">
+                <p className="text-xs text-text-muted mb-1">Your Code</p>
+                <div className="flex items-center justify-center gap-2">
+                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={copied === "user_code" ? "check" : "content_copy"}
+                    onClick={() => copy(deviceData.user_code, "user_code")}
+                  />
+                </div>
+              </div>
+            </div>
+            {polling && (
+              <div className="flex items-center justify-center gap-2 text-sm text-text-muted">
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                Waiting for authorization...
+              </div>
+            )}
           </>
         )}
 
@@ -474,4 +519,9 @@ OAuthModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   /** Extra metadata passed to /authorize and /exchange (e.g. gitlab clientId/baseUrl) */
   oauthMeta: PropTypes.object,
+  /** Optional Kiro IDC config for AWS IAM Identity Center device flow */
+  idcConfig: PropTypes.shape({
+    startUrl: PropTypes.string,
+    region: PropTypes.string,
+  }),
 };

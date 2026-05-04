@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
+import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -34,6 +35,27 @@ const parseGeminiCliModels = (data) => {
 
   return [];
 };
+
+const appendCodexReviewModels = (models) => models.flatMap((model) => {
+  const id = model?.id || model?.slug || model?.model || model?.name;
+  if (!id) return [];
+  const name = model?.display_name || model?.displayName || model?.name || id;
+  const normalized = { ...model, id, name };
+  const isChatModel = (model?.type || "llm") !== "image" && !id.toLowerCase().includes("embed");
+  if (!isChatModel || id.endsWith("-review")) return [normalized];
+  return [
+    normalized,
+    {
+      ...normalized,
+      id: `${id}-review`,
+      name: `${name} Review`,
+      upstreamModelId: id,
+      quotaFamily: "review",
+    },
+  ];
+});
+
+const parseCodexModels = (data) => appendCodexReviewModels(parseOpenAIStyleModels(data));
 
 const createOpenAIModelsConfig = (url) => ({
   url,
@@ -82,6 +104,14 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || []
+  },
+  codex: {
+    url: "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+    method: "GET",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: parseCodexModels
   },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
@@ -148,6 +178,8 @@ const PROVIDER_MODELS_CONFIG = {
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || []
   },
+  "volcengine-ark": createOpenAIModelsConfig("https://ark.cn-beijing.volces.com/api/coding/v3/models"),
+  byteplus: createOpenAIModelsConfig("https://ark.ap-southeast.bytepluses.com/api/coding/v3/models"),
 
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
@@ -163,7 +195,7 @@ const PROVIDER_MODELS_CONFIG = {
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
   ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
-  "ollama-local": createOpenAIModelsConfig("http://localhost:11434/api/tags"),
+  // ollama-local: url resolved dynamically below via providerSpecificData.baseUrl
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
@@ -377,6 +409,29 @@ export async function GET(request, { params }) {
         connectionId: connection.id,
         models: [],
         warning,
+      });
+    }
+
+    if (connection.provider === "ollama-local") {
+      const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`Error fetching models from ollama-local:`, errorText);
+        return NextResponse.json(
+          { error: `Failed to fetch models: ${response.status}` },
+          { status: response.status }
+        );
+      }
+      const data = await response.json();
+      const models = parseOpenAIStyleModels(data);
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models,
       });
     }
 

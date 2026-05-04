@@ -1,10 +1,8 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
-
-const isCloud = typeof caches !== "undefined" && typeof caches === "object";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -12,36 +10,15 @@ const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via settings
 const CONFIG_CACHE_TTL_MS = 5000;
 const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
+const DB_FILE = path.join(DATA_DIR, "request-details.json");
 
-function getAppName() {
-  return "9router";
-}
-
-function getUserDataDir() {
-  if (isCloud) return "/tmp";
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  const platform = process.platform;
-  const homeDir = os.homedir();
-  const appName = getAppName();
-
-  if (platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-  }
-  return path.join(homeDir, `.${appName}`);
-}
-
-const DATA_DIR = getUserDataDir();
-const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
-
-if (!isCloud && !fs.existsSync(DATA_DIR)) {
+if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 let dbInstance = null;
 
 async function getDb() {
-  if (isCloud) return null;
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
     const db = new Low(adapter, { records: [] });
@@ -127,7 +104,7 @@ function generateDetailId(model) {
 }
 
 async function flushToDatabase() {
-  if (isCloud || isFlushing || writeBuffer.length === 0) return;
+  if (isFlushing || writeBuffer.length === 0) return;
 
   isFlushing = true;
   try {
@@ -198,8 +175,6 @@ async function flushToDatabase() {
 }
 
 export async function saveRequestDetail(detail) {
-  if (isCloud) return;
-
   const config = await getObservabilityConfig();
   if (!config.enabled) return;
 
@@ -217,10 +192,6 @@ export async function saveRequestDetail(detail) {
 }
 
 export async function getRequestDetails(filter = {}) {
-  if (isCloud) {
-    return { details: [], pagination: { page: 1, pageSize: 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
-  }
-
   const db = await getDb();
   let records = [...db.data.records];
 
@@ -248,8 +219,6 @@ export async function getRequestDetails(filter = {}) {
 }
 
 export async function getRequestDetailById(id) {
-  if (isCloud) return null;
-
   const db = await getDb();
   return db.data.records.find(r => r.id === id) || null;
 }
@@ -261,8 +230,6 @@ const _shutdownHandler = async () => {
 };
 
 function ensureShutdownHandler() {
-  if (isCloud) return;
-
   // Remove any previously registered listeners from this module (hot-reload safety)
   process.off("beforeExit", _shutdownHandler);
   process.off("SIGINT", _shutdownHandler);

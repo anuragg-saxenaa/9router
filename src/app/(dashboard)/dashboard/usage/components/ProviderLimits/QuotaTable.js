@@ -75,19 +75,14 @@ export default function QuotaTable({ quotas = [], compact = false }) {
     return null;
   }
 
-  const cellPad = compact ? "py-1.5 px-2" : "py-2 px-3";
-  const nameText = compact ? "text-xs" : "text-sm";
-  const resetPrimary = compact ? "text-xs" : "text-sm";
+  const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
+  const nameText = compact ? "text-[11px]" : "text-sm";
+  const resetPrimary = compact ? "text-[11px]" : "text-sm";
   const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed text-left">
-        <colgroup>
-          <col className="w-[30%]" /> {/* Model Name */}
-          <col className="w-[45%]" /> {/* Limit Progress */}
-          <col className="w-[25%]" /> {/* Reset Time */}
-        </colgroup>
         <tbody>
           {quotas.map((quota, index) => {
             const remaining = quota.remainingPercentage !== undefined
@@ -104,7 +99,7 @@ export default function QuotaTable({ quotas = [], compact = false }) {
                 className="border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
               >
                 {/* Model Name with Status Emoji */}
-                <td className={cellPad}>
+                <td className={`${cellPad} w-[30%]`}>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-[10px] shrink-0">{colors.emoji}</span>
                     <span className={`${nameText} font-medium text-text-primary truncate`}>
@@ -114,7 +109,7 @@ export default function QuotaTable({ quotas = [], compact = false }) {
                 </td>
 
                 {/* Limit (Progress + Numbers) */}
-                <td className={cellPad}>
+                <td className={`${cellPad} w-[45%]`}>
                   <div className={compact ? "space-y-1" : "space-y-1.5"}>
                     {/* Progress bar - always show with border for visibility */}
                     <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
@@ -139,20 +134,29 @@ export default function QuotaTable({ quotas = [], compact = false }) {
                 </td>
 
                 {/* Reset Time */}
-                <td className={cellPad}>
+                <td className={`${cellPad} w-[25%]`}>
                   {countdown !== "-" || resetDisplay ? (
-                    <div className="space-y-0.5">
-                      {countdown !== "-" && (
-                        <div className={`${resetPrimary} text-text-primary font-medium`}>
-                          in {countdown}
-                        </div>
-                      )}
-                      {resetDisplay && (
-                        <div className={`${resetSecondary} text-text-muted`}>
-                          {resetDisplay}
-                        </div>
-                      )}
-                    </div>
+                    compact ? (
+                      <div
+                        className={`${resetPrimary} text-text-primary font-medium truncate`}
+                        title={resetDisplay || ""}
+                      >
+                        {countdown !== "-" ? `in ${countdown}` : resetDisplay}
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {countdown !== "-" && (
+                          <div className={`${resetPrimary} text-text-primary font-medium`}>
+                            in {countdown}
+                          </div>
+                        )}
+                        {resetDisplay && (
+                          <div className={`${resetSecondary} text-text-muted`}>
+                            {resetDisplay}
+                          </div>
+                        )}
+                      </div>
+                    )
                   ) : (
                     <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
                   )}

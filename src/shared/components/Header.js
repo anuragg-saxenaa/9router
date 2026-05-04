@@ -5,13 +5,45 @@ import { useMemo } from "react";
 import Link from "next/link";
 import PropTypes from "prop-types";
 import ProviderIcon from "@/shared/components/ProviderIcon";
-import { ThemeToggle, LanguageSwitcher } from "@/shared/components";
-import NineRemoteButton from "@/shared/components/NineRemoteButton";
+import HeaderMenu from "@/shared/components/HeaderMenu";
+import ThemeToggle from "@/shared/components/ThemeToggle";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
+import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
+
+  // Media provider detail: /dashboard/media-providers/[kind]/[id]
+  const mediaDetailMatch = pathname.match(/\/media-providers\/([^/]+)\/([^/]+)$/);
+  if (mediaDetailMatch) {
+    const kindId = mediaDetailMatch[1];
+    const providerId = mediaDetailMatch[2];
+    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
+    const provider = AI_PROVIDERS[providerId];
+    return {
+      title: provider?.name || providerId,
+      description: "",
+      breadcrumbs: [
+        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
+        { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
+        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+      ],
+    };
+  }
+
+  // Media provider kind: /dashboard/media-providers/[kind]
+  const mediaKindMatch = pathname.match(/\/media-providers\/([^/]+)$/);
+  if (mediaKindMatch) {
+    const kindId = mediaKindMatch[1];
+    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
+    return {
+      title: kindConfig?.label || kindId,
+      description: `Manage your ${kindConfig?.label || kindId} providers`,
+      icon: kindConfig?.icon || "perm_media",
+      breadcrumbs: [],
+    };
+  }
 
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
@@ -34,7 +66,7 @@ const getPageInfo = (pathname) => {
     }
   }
 
-  if (pathname.includes("/providers"))
+  if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
     return {
       title: "Providers",
       description: "Manage your AI provider connections",
@@ -54,6 +86,13 @@ const getPageInfo = (pathname) => {
       description:
         "Monitor your API usage, token consumption, and request logs",
       icon: "bar_chart",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/auth-files"))
+    return {
+      title: "Auth Files",
+      description: "Map provider credentials stored in the local database",
+      icon: "vpn_key",
       breadcrumbs: [],
     };
   if (pathname.includes("/quota"))
@@ -82,6 +121,13 @@ const getPageInfo = (pathname) => {
       title: "Proxy Pools",
       description: "Manage your proxy pool configurations",
       icon: "lan",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/skills"))
+    return {
+      title: "Agent Skills",
+      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      icon: "extension",
       breadcrumbs: [],
     };
   if (pathname.includes("/endpoint"))
@@ -143,9 +189,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   };
 
   return (
-    <header className="flex items-center justify-between px-8 py-5 border-b border-black/5 dark:border-white/5 bg-bg/80 backdrop-blur-xl z-10 sticky top-0">
+    <header className="shrink-0 flex items-center justify-between gap-3 px-4 lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
       {/* Mobile menu button */}
-      <div className="flex items-center gap-3 lg:hidden">
+      <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
           <button
             onClick={onMenuClick}
@@ -156,8 +202,8 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         )}
       </div>
 
-      {/* Page title with breadcrumbs - desktop */}
-      <div className="hidden lg:flex flex-col">
+      {/* Page title with breadcrumbs */}
+      <div className="flex flex-col min-w-0 flex-1">
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
@@ -188,7 +234,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                         fallbackText={crumb.label.slice(0, 2).toUpperCase()}
                       />
                     )}
-                    <h1 className="text-2xl font-semibold text-text-main tracking-tight">
+                    <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
                       {translate(crumb.label)}
                     </h1>
                   </div>
@@ -200,16 +246,16 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           <div>
             <div className="flex items-center gap-2">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-2xl">
+                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
                   {icon}
                 </span>
               )}
-              <h1 className="text-2xl font-semibold tracking-tight">
+              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
                 {translate(title)}
               </h1>
             </div>
             {description && (
-              <p className="text-sm text-text-muted">
+              <p className="hidden lg:block text-sm text-text-muted truncate">
                 {translate(description)}
               </p>
             )}
@@ -218,24 +264,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       </div>
 
       {/* Right actions */}
-      <div className="flex items-center gap-3 ml-auto">
-        {/* 9Remote button */}
-        <NineRemoteButton />
-
-        {/* Language switcher */}
-        <LanguageSwitcher />
-
-        {/* Theme toggle */}
+      <div className="flex items-center gap-1 shrink-0">
         <ThemeToggle />
-
-        {/* Logout button */}
-        <button
-          onClick={handleLogout}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
-          title="Logout"
-        >
-          <span className="material-symbols-outlined">logout</span>
-        </button>
+        <HeaderMenu onLogout={handleLogout} />
       </div>
     </header>
   );

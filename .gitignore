@@ -19,6 +19,7 @@
 product
 # production
 /build
+.idea/
 
 # misc
 .DS_Store
@@ -67,3 +68,5 @@ README1.md
 deploy*.sh
 ecosystem.config.*
 
+scripts/agSniffer/*
+gitbooks/*

@@ -33,7 +33,6 @@ export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",
-    retry: { 429: 0 },
     headers: {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
@@ -73,7 +72,6 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -158,6 +156,16 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
+  "volcengine-ark": {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  byteplus: {
+    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions",
     responsesUrl: "https://api.githubcopilot.com/responses",
@@ -179,6 +187,7 @@ export const PROVIDERS = {
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     format: "kiro",
+    retry: { 429: 2 },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
@@ -199,7 +208,7 @@ export const PROVIDERS = {
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    clientVersion: "1.1.3"
+    clientVersion: "3.1.0"
   },
   "kimi-coding": {
     baseUrl: KIMI_CODING_BASE_URL,
@@ -332,4 +341,46 @@ export const PROVIDERS = {
     baseUrl: "https://copilot.tencent.com/v1/chat/completions",
     format: "openai",
   },
+  opencode: {
+    baseUrl: "https://opencode.ai",
+    format: "openai",
+    headers: { "x-opencode-client": "desktop" },
+    noAuth: true
+  },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "grok-web": {
+    baseUrl: "https://grok.com/rest/app-chat/conversations/new",
+    format: "grok-web",
+    authType: "cookie"
+  },
+  "perplexity-web": {
+    baseUrl: "https://www.perplexity.ai/rest/sse/perplexity_ask",
+    format: "perplexity-web",
+    authType: "cookie"
+  },
+  azure: {
+    baseUrl: "",
+    format: "openai",
+    headers: {}
+  },
+  // Cloudflare Workers AI - {accountId} resolved from credentials.providerSpecificData.accountId
+  "cloudflare-ai": {
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
+    format: "openai"
+  },
+  "xiaomi-mimo": {
+    baseUrl: "https://api.xiaomimimo.com/v1/chat/completions",
+    format: "openai"
+  },
 };
+
+export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
+
+export function resolveOllamaLocalHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}

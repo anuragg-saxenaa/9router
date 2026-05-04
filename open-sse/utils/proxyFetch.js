@@ -1,8 +1,6 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
-const isCloud = typeof caches !== "undefined" && typeof caches === "object";
-
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
 
@@ -198,6 +196,18 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
+  // Vercel relay: forward request via relay headers
+  const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
+  if (vercelRelayUrl) {
+    const parsed = new URL(targetUrl);
+    const relayHeaders = {
+      ...options.headers,
+      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
+      "x-relay-path": `${parsed.pathname}${parsed.search}`,
+    };
+    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+  }
+
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
@@ -251,8 +261,8 @@ async function patchedFetch(url, options = {}) {
 }
 
 // Idempotency guard — only patch once to avoid wrapping multiple times
-if (!isCloud && globalThis.fetch !== patchedFetch) {
+if (globalThis.fetch !== patchedFetch) {
   globalThis.fetch = patchedFetch;
 }
 
-export default isCloud ? originalFetch : patchedFetch;
+export default patchedFetch;

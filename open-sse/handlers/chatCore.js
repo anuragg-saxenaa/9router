@@ -5,7 +5,7 @@ import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import { getModelTargetFormat, getModelCaps, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelTargetFormat, getModelStrip, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -16,6 +16,8 @@ import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
+import { injectCaveman } from "../rtk/caveman.js";
+import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -24,7 +26,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, sourceFormatOverride }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -37,7 +39,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
-  const modelCaps = getModelCaps(alias, model);
+  const stripList = getModelStrip(alias, model);
+
+  // Inject provider-level thinking config override (only if client hasn't set)
+  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
+  if (providerThinking?.mode && providerThinking.mode !== "auto") {
+    const mode = providerThinking.mode;
+    if (mode === "on" && !body.thinking) {
+      console.log("Injecting provider-level thinking config override: on");
+      body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
+    } else if (mode === "off" && !body.thinking) {
+      body = { ...body, thinking: { type: "disabled" } };
+    } else if (!body.reasoning_effort) {
+      body = { ...body, reasoning_effort: mode };
+    }
+  }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex";
@@ -68,7 +84,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model };
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, modelCaps, connectionId);
+    translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -76,6 +92,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = model;
+  }
+
+  // Token savers: applied at the final body just before dispatch
+  // Covers both passthrough (source shape) and translated (target shape) flows
+  const finalFormat = passthrough ? sourceFormat : targetFormat;
+
+  // RTK: compress tool_result content
+  const rtkStats = compressMessages(translatedBody, rtkEnabled);
+  const rtkLine = formatRtkLog(rtkStats);
+  if (rtkLine) console.log(rtkLine);
+
+  // Caveman: inject terse-style system prompt
+  if (cavemanEnabled && cavemanLevel) {
+    injectCaveman(translatedBody, finalFormat, cavemanLevel);
+    log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
   const executor = getExecutor(provider);
@@ -98,9 +129,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
+    vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
   };
 
-  if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
+  if (proxyOptions.vercelRelayUrl) {
+    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
+    const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
+    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`);
+  } else if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
     let maskedProxyUrl = proxyOptions.connectionProxyUrl;
     try {
       const parsed = new URL(proxyOptions.connectionProxyUrl);
@@ -153,8 +189,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
-  // Handle 401/403 - try token refresh
-  if (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN) {
+  // Handle 401/403 - try token refresh (skip for noAuth providers)
+  if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     try {
       const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
@@ -178,7 +214,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
+    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -192,11 +228,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    if (retryAfterMs && provider === "antigravity") {
-      log?.debug?.("RETRY", `Antigravity quota reset in ${Math.ceil(retryAfterMs / 1000)}s`);
-    }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, retryAfterMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
@@ -211,7 +244,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, trackDone, appendLog });
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
     return result;
   }

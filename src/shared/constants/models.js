@@ -1,15 +1,16 @@
 // Import directly from file to avoid pulling in server-side dependencies via index.js
 export {
   PROVIDER_MODELS,
-  MODEL_CAPS,
   getProviderModels,
   getDefaultModel,
   isValidModel as isValidModelCore,
   findModelName,
   getModelTargetFormat,
-  getModelCaps,
+  getModelStrip,
   PROVIDER_ID_TO_ALIAS,
-  getModelsByProviderId
+  getModelsByProviderId,
+  getModelUpstreamId,
+  getModelQuotaFamily
 } from "open-sse/config/providerModels.js";
 
 import { AI_PROVIDERS, isOpenAICompatibleProvider } from "./providers.js";

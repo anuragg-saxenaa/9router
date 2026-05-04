@@ -18,7 +18,10 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         <span className="material-symbols-outlined text-base" style={iconColor ? { color: iconColor } : undefined}>
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        <div className="flex flex-col gap-1">
+          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+        </div>
         {onTest && (
           <div className="relative group/btn">
             <button onClick={onTest} disabled={isTesting} className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
@@ -105,27 +108,32 @@ AddCustomModelModal.propTypes = {
 // ── ModelsCard ─────────────────────────────────────────────────
 // Self-contained card: shows models for a provider, filtered by optional `kindFilter`.
 // kindFilter: if provided, only shows models with matching type/kinds field.
-export default function ModelsCard({ providerId, kindFilter }) {
+export default function ModelsCard({ providerId, kindFilter, providerAliasOverride }) {
   const { copied, copy } = useCopyToClipboard();
   const [modelAliases, setModelAliases] = useState({});
+  const [customModels, setCustomModels] = useState([]);
   const [modelTestResults, setModelTestResults] = useState({});
   const [testingModelId, setTestingModelId] = useState(null);
   const [testError, setTestError] = useState("");
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [connections, setConnections] = useState([]);
 
-  const providerAlias = getProviderAlias(providerId);
+  const providerAlias = providerAliasOverride || getProviderAlias(providerId);
+  const effectiveType = kindFilter || "llm";
 
   const fetchData = useCallback(async () => {
     try {
-      const [aliasRes, connRes] = await Promise.all([
+      const [aliasRes, connRes, customRes] = await Promise.all([
         fetch("/api/models/alias"),
         fetch("/api/providers", { cache: "no-store" }),
+        fetch("/api/models/custom", { cache: "no-store" }),
       ]);
       const aliasData = await aliasRes.json();
       const connData = await connRes.json();
+      const customData = await customRes.json();
       if (aliasRes.ok) setModelAliases(aliasData.aliases || {});
       if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
+      if (customRes.ok) setCustomModels(customData.models || []);
     } catch (e) { console.log("ModelsCard fetch error:", e); }
   }, [providerId]);
 
@@ -150,6 +158,25 @@ export default function ModelsCard({ providerId, kindFilter }) {
     } catch (e) { console.log("delete alias error:", e); }
   };
 
+  const handleAddCustomModel = async (modelId) => {
+    try {
+      const res = await fetch("/api/models/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerAlias, id: modelId, type: effectiveType }),
+      });
+      if (res.ok) await fetchData();
+    } catch (e) { console.log("add custom model error:", e); }
+  };
+
+  const handleDeleteCustomModel = async (modelId) => {
+    try {
+      const params = new URLSearchParams({ providerAlias, id: modelId, type: effectiveType });
+      const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
+      if (res.ok) await fetchData();
+    } catch (e) { console.log("delete custom model error:", e); }
+  };
+
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
     setTestingModelId(modelId);
@@ -157,7 +184,7 @@ export default function ModelsCard({ providerId, kindFilter }) {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${modelId}` }),
+        body: JSON.stringify({ model: `${providerAlias}/${modelId}`, kind: kindFilter }),
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
@@ -168,28 +195,23 @@ export default function ModelsCard({ providerId, kindFilter }) {
     } finally { setTestingModelId(null); }
   };
 
-  // Get models — filter by kindFilter if provided
-  const allModels = getModelsByProviderId(providerId);
-  const displayModels = kindFilter
-    ? allModels.filter((m) => {
+  // Built-in models — filter by kindFilter if provided
+  const allBuiltIn = getModelsByProviderId(providerId);
+  const builtInModels = kindFilter
+    ? allBuiltIn.filter((m) => {
         if (m.kinds) return m.kinds.includes(kindFilter);
-        if (m.type) return m.type === kindFilter;
-        return kindFilter === "llm";
+        return (m.type || "llm") === kindFilter;
       })
-    : allModels;
+    : allBuiltIn;
 
-  // Custom models added via alias
-  const customModels = Object.entries(modelAliases)
-    .filter(([alias, fullModel]) => {
-      const prefix = `${providerAlias}/`;
-      if (!fullModel.startsWith(prefix)) return false;
-      const modelId = fullModel.slice(prefix.length);
-      return !displayModels.some((m) => m.id === modelId) && alias === modelId;
-    })
-    .map(([alias, fullModel]) => ({
-      id: fullModel.slice(`${providerAlias}/`.length),
-      alias,
-    }));
+  // Custom models for this provider + kind, dedupe vs built-in
+  const myCustomModels = customModels.filter(
+    (m) => m.providerAlias === providerAlias
+      && (m.type || "llm") === effectiveType
+      && !builtInModels.some((b) => b.id === m.id)
+  );
+
+  const displayModels = builtInModels;
 
   return (
     <>
@@ -221,16 +243,15 @@ export default function ModelsCard({ providerId, kindFilter }) {
             );
           })}
 
-          {customModels.map((model) => (
+          {myCustomModels.map((model) => (
             <ModelRow
-              key={model.id}
-              model={{ id: model.id }}
+              key={`${model.id}-${model.type}`}
+              model={{ id: model.id, name: model.name }}
               fullModel={`${providerAlias}/${model.id}`}
-              alias={model.alias}
               copied={copied}
               onCopy={copy}
               onSetAlias={() => {}}
-              onDeleteAlias={() => handleDeleteAlias(model.alias)}
+              onDeleteAlias={() => handleDeleteCustomModel(model.id)}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
@@ -251,7 +272,7 @@ export default function ModelsCard({ providerId, kindFilter }) {
       <AddCustomModelModal
         isOpen={showAddCustomModel}
         onSave={async (modelId) => {
-          await handleSetAlias(modelId, modelId);
+          await handleAddCustomModel(modelId);
           setShowAddCustomModel(false);
         }}
         onClose={() => setShowAddCustomModel(false)}
@@ -263,4 +284,5 @@ export default function ModelsCard({ providerId, kindFilter }) {
 ModelsCard.propTypes = {
   providerId: PropTypes.string.isRequired,
   kindFilter: PropTypes.string, // e.g. "tts", "embedding" — filters models shown
+  providerAliasOverride: PropTypes.string, // override alias (e.g. for custom-embedding nodes using prefix)
 };

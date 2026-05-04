@@ -32,11 +32,14 @@ export default function ProxyPoolsPage() {
   const [loading, setLoading] = useState(true);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
+  const [showVercelModal, setShowVercelModal] = useState(false);
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
+  const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [testingId, setTestingId] = useState(null);
   const notify = useNotificationStore();
 
@@ -169,6 +172,41 @@ export default function ProxyPoolsPage() {
     setShowBatchImportModal(false);
   };
 
+  const openVercelModal = () => {
+    setVercelForm({ vercelToken: "", projectName: "vercel-relay" });
+    setShowVercelModal(true);
+  };
+
+  const closeVercelModal = () => {
+    if (deploying) return;
+    setShowVercelModal(false);
+  };
+
+  const handleVercelDeploy = async () => {
+    if (!vercelForm.vercelToken.trim()) return;
+    setDeploying(true);
+    try {
+      const res = await fetch("/api/proxy-pools/vercel-deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vercelForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeVercelModal();
+        notify.success(`Deployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Deploy failed");
+      }
+    } catch (error) {
+      console.log("Error deploying Vercel relay:", error);
+      notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
   const parseProxyLine = (line) => {
     const trimmed = line.trim();
     if (!trimmed) return null;
@@ -287,7 +325,7 @@ export default function ProxyPoolsPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -295,26 +333,29 @@ export default function ProxyPoolsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Proxy Pools</h1>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Proxy Pools</h1>
           <p className="text-sm text-text-muted mt-1">
             Manage reusable per-connection proxies and bind them to provider connections.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" icon="upload" onClick={openBatchImportModal}>
-            Batch Import Proxies
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
+          <Button size="sm" variant="secondary" icon="cloud_upload" onClick={openVercelModal}>
+            Vercel Relay
           </Button>
-          <Button icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
+          <Button size="sm" variant="secondary" icon="upload" onClick={openBatchImportModal}>
+            Batch Import
+          </Button>
+          <Button size="sm" icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
         </div>
       </div>
 
       <Card>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">Total: {proxyPools.length}</Badge>
             <Badge variant="success">Active: {activeCount}</Badge>
           </div>
@@ -331,16 +372,19 @@ export default function ProxyPoolsPage() {
         ) : (
           <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {proxyPools.map((pool) => (
-              <div key={pool.id} className="py-3 flex items-center justify-between gap-3 group">
+              <div key={pool.id} className="group flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium truncate">{pool.name}</p>
+                    <p className="min-w-0 max-w-full truncate text-sm font-medium sm:max-w-[18rem]">{pool.name}</p>
                     <Badge variant={getStatusVariant(pool.testStatus)} size="sm" dot>
                       {pool.testStatus || "unknown"}
                     </Badge>
                     <Badge variant={pool.isActive ? "success" : "default"} size="sm">
                       {pool.isActive ? "active" : "inactive"}
                     </Badge>
+                    {pool.type === "vercel" && (
+                      <Badge variant="default" size="sm">vercel relay</Badge>
+                    )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
                     </Badge>
@@ -355,7 +399,7 @@ export default function ProxyPoolsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                   <button
                     onClick={() => handleTest(pool.id)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
@@ -409,11 +453,59 @@ export default function ProxyPoolsPage() {
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button fullWidth onClick={handleBatchImport} disabled={!batchImportText.trim() || importing}>
               {importing ? "Importing..." : "Import"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeBatchImportModal} disabled={importing}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showVercelModal}
+        title="Deploy Vercel Relay"
+        onClose={closeVercelModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-blue-500/5 border border-blue-500/10 p-3 flex flex-col gap-1.5">
+            <p className="text-sm text-text-main font-medium">What is Vercel Relay?</p>
+            <p className="text-xs text-text-muted">
+              Deploys an edge relay function to Vercel. All AI provider requests will be forwarded through Vercel&apos;s edge network, masking your real IP from providers.
+            </p>
+            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
+              <li>Your IP is replaced by Vercel&apos;s dynamic edge IPs (hundreds of IPs across 20+ global regions)</li>
+              <li>Vercel serves millions of apps — providers can&apos;t block Vercel IPs without affecting legitimate traffic</li>
+              <li>Free tier: 100GB bandwidth/month, 500K edge invocations</li>
+              <li>Deploy multiple relays on different accounts for more IP diversity</li>
+            </ul>
+          </div>
+          <Input
+            label="Vercel API Token"
+            value={vercelForm.vercelToken}
+            onChange={(e) => setVercelForm((prev) => ({ ...prev, vercelToken: e.target.value }))}
+            placeholder="your-vercel-api-token"
+            hint={<>Token is used once for deployment and not stored. <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            type="password"
+          />
+          <Input
+            label="Project Name"
+            value={vercelForm.projectName}
+            onChange={(e) => setVercelForm((prev) => ({ ...prev, projectName: e.target.value }))}
+            placeholder="my-relay"
+            hint="Unique name for your Vercel project. Leave empty for auto-generated name."
+          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              fullWidth
+              onClick={handleVercelDeploy}
+              disabled={!vercelForm.vercelToken.trim() || deploying}
+            >
+              {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeVercelModal} disabled={deploying}>
               Cancel
             </Button>
           </div>
@@ -446,7 +538,7 @@ export default function ProxyPoolsPage() {
             hint="Comma-separated hosts/domains to bypass proxy"
           />
 
-          <div className="rounded-lg border border-border/50 p-3 flex items-center justify-between">
+          <div className="flex flex-col gap-3 rounded-lg border border-border/50 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-medium text-sm">Active</p>
               <p className="text-xs text-text-muted">Inactive pools are ignored by runtime resolution.</p>
@@ -458,7 +550,7 @@ export default function ProxyPoolsPage() {
             />
           </div>
 
-          <div className="rounded-lg border border-border/50 p-3 flex items-center justify-between">
+          <div className="flex flex-col gap-3 rounded-lg border border-border/50 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-medium text-sm">Strict Proxy</p>
               <p className="text-xs text-text-muted">Fail request if proxy is unreachable instead of falling back to direct.</p>
@@ -470,7 +562,7 @@ export default function ProxyPoolsPage() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
               fullWidth
               onClick={handleSave}
